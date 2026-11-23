@@ -9,6 +9,7 @@
  - start plugins
  - start_bot
  - dheck version
+ - format_order
 
 """
 
@@ -170,3 +171,57 @@ async def check_version():
                     logger.debug(f"You are using the latest {__version__}")
     except Exception as error:
         logger.error("check_version: {}", error)
+
+
+def _format_number(value):
+    """
+    Render a numeric value without a redundant trailing ".0"
+    (e.g. 100.0 -> "100", 0.5 -> "0.5"). Non-float values
+    are rendered with str().
+    """
+    if isinstance(value, float) and value.is_integer():
+        return str(int(value))
+    return str(value)
+
+
+def format_order(order: dict) -> str:
+    """
+    Format an order dict into a one-line
+    human-readable message.
+
+    Args:
+        order (dict): Order with the keys ``action``,
+            ``symbol``, ``quantity`` and the optional
+            ``stop_loss`` and ``take_profit``.
+            Optional keys that are missing or None are omitted.
+
+    Returns:
+        str: e.g. ``"BUY 0.5 BTC (SL 100, TP 200)"``
+
+    Raises:
+        ValueError: if a required key is missing or None.
+
+    """
+    # Read each field exactly once so validation and formatting
+    # always use the same values.
+    fields = {
+        key: order.get(key)
+        for key in ("action", "symbol", "quantity", "stop_loss", "take_profit")
+    }
+    missing = [key for key in ("action", "symbol", "quantity") if fields[key] is None]
+    if missing:
+        raise ValueError(f"Order is missing required field(s): {', '.join(missing)}")
+
+    message = (
+        f"{str(fields['action']).upper()} "
+        f"{_format_number(fields['quantity'])} "
+        f"{fields['symbol']}"
+    )
+    extras = [
+        f"{label} {_format_number(fields[key])}"
+        for key, label in (("stop_loss", "SL"), ("take_profit", "TP"))
+        if fields[key] is not None
+    ]
+    if extras:
+        message += f" ({', '.join(extras)})"
+    return message
