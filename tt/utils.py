@@ -9,6 +9,7 @@
  - start plugins
  - start_bot
  - dheck version
+ - parse_order
 
 """
 
@@ -16,6 +17,7 @@ __version__ = "7.2.29"
 
 
 import asyncio
+import math
 
 import aiohttp
 from apprise import Apprise, NotifyFormat
@@ -131,6 +133,87 @@ async def start_bot(listener, plugin_manager, max_iterations=None):
             break
 
     await asyncio.sleep(1)
+
+
+_ORDER_ACTIONS = {"buy", "sell"}
+_ORDER_OPTIONS = {"sl": "stop_loss", "tp": "take_profit"}
+
+
+def _parse_positive_number(value, field):
+    """
+    Convert ``value`` to a finite, strictly positive float.
+
+    Raises:
+        ValueError: if ``value`` is not a finite number greater than zero.
+    """
+    try:
+        number = float(value)
+    except ValueError:
+        raise ValueError(f"Invalid {field}: {value!r}") from None
+    if not math.isfinite(number) or number <= 0:
+        raise ValueError(f"Invalid {field}: {value!r}")
+    return number
+
+
+def parse_order(message: str) -> dict:
+    """
+    Parse a trading message into an order dict.
+
+    The expected format is::
+
+        <action> <symbol> <quantity> [sl=<price>] [tp=<price>]
+
+    for example ``"buy BTC 0.5 sl=100 tp=200"``.
+    The action is ``buy`` or ``sell`` (case-insensitive),
+    the symbol is upper-cased, and the optional ``sl`` / ``tp``
+    options may appear in any order.
+
+    Args:
+        message (str): Trading message
+
+    Returns:
+        dict: with keys ``action``, ``symbol``, ``quantity``,
+        ``stop_loss`` and ``take_profit``. The last two are
+        ``None`` when not provided.
+
+    Raises:
+        ValueError: if the message is not a valid order.
+    """
+    if not isinstance(message, str):
+        raise ValueError("Order message must be a string")
+
+    tokens = message.split()
+    if len(tokens) < 3:
+        raise ValueError(
+            f"Invalid order {message!r}: expected '<action> <symbol> <quantity>'"
+        )
+
+    action, symbol, quantity, *options = tokens
+    action = action.lower()
+    if action not in _ORDER_ACTIONS:
+        raise ValueError(f"Invalid action: {action!r}")
+
+    order = {
+        "action": action,
+        "symbol": symbol.upper(),
+        "quantity": _parse_positive_number(quantity, "quantity"),
+        "stop_loss": None,
+        "take_profit": None,
+    }
+
+    seen = set()
+    for option in options:
+        key, sep, value = option.partition("=")
+        key = key.lower()
+        if not sep or key not in _ORDER_OPTIONS:
+            raise ValueError(f"Invalid order option: {option!r}")
+        if key in seen:
+            raise ValueError(f"Duplicate order option: {key!r}")
+        seen.add(key)
+        field = _ORDER_OPTIONS[key]
+        order[field] = _parse_positive_number(value, field)
+
+    return order
 
 
 async def check_version():
