@@ -202,21 +202,25 @@ def format_order(order: dict) -> str:
         ValueError: if a required key is missing or None.
 
     """
-    missing = [
-        key for key in ("action", "symbol", "quantity") if order.get(key) is None
-    ]
+    # Read each field exactly once so validation and formatting
+    # always use the same values.
+    fields = {
+        key: order.get(key)
+        for key in ("action", "symbol", "quantity", "stop_loss", "take_profit")
+    }
+    missing = [key for key in ("action", "symbol", "quantity") if fields[key] is None]
     if missing:
         raise ValueError(f"Order is missing required field(s): {', '.join(missing)}")
 
     message = (
-        f"{str(order['action']).upper()} "
-        f"{_format_number(order['quantity'])} "
-        f"{order['symbol']}"
+        f"{str(fields['action']).upper()} "
+        f"{_format_number(fields['quantity'])} "
+        f"{fields['symbol']}"
     )
     extras = [
-        f"{label} {_format_number(order[key])}"
+        f"{label} {_format_number(fields[key])}"
         for key, label in (("stop_loss", "SL"), ("take_profit", "TP"))
-        if order.get(key) is not None
+        if fields[key] is not None
     ]
     if extras:
         message += f" ({', '.join(extras)})"
